@@ -1,7 +1,9 @@
 import {
   applyInteractionUpdate,
+  buildAssistantTextEvents,
   createStreamMappingState,
   resolveFinalAssistantText,
+  suffixAfterPrefix,
 } from "../src/cursor/stream-mapping.ts";
 
 function expect(condition: unknown, message: string): void {
@@ -63,5 +65,78 @@ expect(
   resolveFinalAssistantText("unrelated final", "unrelated streamed") === "unrelated final",
   "should keep final text when neither source is a prefix of the other",
 );
+
+expect(
+  suffixAfterPrefix("Hello", "Hello world") === " world",
+  "suffixAfterPrefix should emit suffix",
+);
+expect(
+  suffixAfterPrefix("Hello world", "Hello") === "",
+  "suffixAfterPrefix should suppress shorter replay",
+);
+expect(
+  suffixAfterPrefix("streamed answer", "unrelated final") === "",
+  "suffixAfterPrefix should suppress unrelated replay",
+);
+
+const textState = createStreamMappingState(baseBody);
+const firstText = applyInteractionUpdate({ type: "text-delta", text: "Hello " }, textState);
+const secondText = applyInteractionUpdate({ type: "text-delta", text: "from stream" }, textState);
+const textDeltas = [...firstText, ...secondText].filter(
+  (event) => event.type === "response.output_text.delta",
+);
+
+expect(textDeltas.length === 2, "text-delta should stream immediately");
+expect(
+  textDeltas.map((event) => event.delta).join("") === "Hello from stream",
+  "streamed text deltas should match SDK text",
+);
+expect(
+  textState.messageItem?.content[0]?.type === "output_text" &&
+    textState.messageItem.content[0].text === "Hello from stream",
+  "message item should accumulate streamed text",
+);
+
+const finalSuffix = buildAssistantTextEvents(textState, "Hello from stream with final suffix");
+const finalSuffixDeltas = finalSuffix.filter(
+  (event) => event.type === "response.output_text.delta",
+);
+expect(finalSuffixDeltas.length === 1, "final replay should emit only missing suffix");
+expect(finalSuffixDeltas[0]?.delta === " with final suffix", "final replay suffix mismatch");
+
+const duplicateFinal = buildAssistantTextEvents(textState, "Hello from stream with final suffix");
+expect(
+  duplicateFinal.every((event) => event.type !== "response.output_text.delta"),
+  "identical final text should not emit duplicate deltas",
+);
+
+const unrelatedState = createStreamMappingState(baseBody);
+applyInteractionUpdate({ type: "text-delta", text: "streamed answer" }, unrelatedState);
+const unrelatedFinal = buildAssistantTextEvents(
+  unrelatedState,
+  resolveFinalAssistantText("unrelated final", unrelatedState.bufferedAssistantText),
+);
+const unrelatedFinalDeltas = unrelatedFinal.filter(
+  (event) => event.type === "response.output_text.delta",
+);
+expect(
+  unrelatedFinalDeltas.length === 0,
+  "unrelated final replay should not emit duplicate full text",
+);
+expect(
+  unrelatedState.messageItem?.content[0]?.type === "output_text" &&
+    unrelatedState.messageItem.content[0].text === "unrelated final",
+  "unrelated final replay should replace stored assistant text",
+);
+
+const trimState = createStreamMappingState(baseBody);
+applyInteractionUpdate({ type: "text-delta", text: "  hello" }, trimState);
+const trimFinal = buildAssistantTextEvents(
+  trimState,
+  resolveFinalAssistantText("hello world", trimState.bufferedAssistantText),
+);
+const trimFinalDeltas = trimFinal.filter((event) => event.type === "response.output_text.delta");
+expect(trimFinalDeltas.length === 1, "trim-aware final replay should emit one suffix delta");
+expect(trimFinalDeltas[0]?.delta === " world", "trim-aware final replay suffix mismatch");
 
 console.log("stream mapping tests passed");

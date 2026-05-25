@@ -21,6 +21,23 @@ export function createStreamMappingState(body: CreateResponseRequest): StreamSta
   };
 }
 
+export function suffixAfterPrefix(existing: string, incoming: string): string {
+  if (!incoming) return "";
+  if (!existing) return incoming;
+  if (incoming.startsWith(existing)) return incoming.slice(existing.length);
+  if (existing.startsWith(incoming)) return "";
+
+  const trimmedExisting = existing.trim();
+  const trimmedIncoming = incoming.trim();
+  if (!trimmedExisting) return incoming;
+  if (trimmedIncoming.startsWith(trimmedExisting)) {
+    return trimmedIncoming.slice(trimmedExisting.length);
+  }
+  if (trimmedExisting.startsWith(trimmedIncoming)) return "";
+
+  return "";
+}
+
 export function resolveFinalAssistantText(
   finalResult: string | undefined,
   buffered: string,
@@ -106,7 +123,7 @@ export function applyInteractionUpdate(
 ): ResponseStreamEvent[] {
   if (update.type === "text-delta" && update.text) {
     state.bufferedAssistantText += update.text;
-    return [];
+    return buildAssistantTextEvents(state, state.bufferedAssistantText);
   }
 
   if (update.type === "thinking-delta" && update.text) {
@@ -142,17 +159,19 @@ export function buildAssistantTextEvents(
 
   const { item, events: startEvents } = ensureMessageItem(state);
   const part = outputTextPart(item);
+  const existingText = part?.text ?? "";
+  const textToEmit = suffixAfterPrefix(existingText, text);
   if (part) part.text = text;
 
   const outputIndex = state.response.output.indexOf(item);
   const events: ResponseStreamEvent[] = [...startEvents];
 
-  for (let offset = 0; offset < text.length; offset += chunkSize) {
+  for (let offset = 0; offset < textToEmit.length; offset += chunkSize) {
     events.push({
       type: "response.output_text.delta",
       output_index: outputIndex,
       content_index: 0,
-      delta: text.slice(offset, offset + chunkSize),
+      delta: textToEmit.slice(offset, offset + chunkSize),
       item_id: item.id,
     });
   }
