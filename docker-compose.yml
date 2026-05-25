@@ -1,0 +1,24 @@
+services:
+  cursor-sdk-server:
+    build: .
+    image: cursor-sdk-server:local
+    ports:
+      - "127.0.0.1:8765:8765"
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8765
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "const r=await fetch('http://127.0.0.1:8765/health'); process.exit(r.ok?0:1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
