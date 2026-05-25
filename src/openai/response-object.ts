@@ -71,17 +71,15 @@ export function finalizeResponse(
   };
 }
 
-export function usageFromTurnEnded(usage?: {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens?: number;
-}): ResponseUsage | undefined {
+// Cursor cacheReadTokens are internal SDK accounting; do not map them to OpenAI cached_tokens.
+export function usageFromTurnEnded(
+  usage?: Pick<{ inputTokens: number; outputTokens: number }, "inputTokens" | "outputTokens">,
+): ResponseUsage | undefined {
   if (!usage) return undefined;
-  const input = usage.inputTokens;
-  const output = usage.outputTokens;
+  const { inputTokens, outputTokens } = usage;
   return {
-    input_tokens: input,
-    output_tokens: output,
-    total_tokens: input + output,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: inputTokens + outputTokens,
   };
 }
