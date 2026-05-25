@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "typescript/no-unsafe-type-assertion": "off"
+  },
+  "env": {
+    "node": true
+  },
+  "ignorePatterns": ["node_modules/**", "dist/**", ".bun/**"],
+  "options": {
+    "typeAware": true,
+    "typeCheck": false
+  },
+  "overrides": [
+    {
+      "files": ["test/**/*.ts"],
+      "rules": {
+        "typescript/no-floating-promises": "off",
+        "typescript/no-unsafe-type-assertion": "off",
+        "typescript/no-misused-spread": "off",
+        "typescript/no-base-to-string": "off",
+        "typescript/unbound-method": "off",
+        "eslint/no-shadow": "off",
+        "unicorn/consistent-function-scoping": "off"
+      }
+    }
+  ]
+}
