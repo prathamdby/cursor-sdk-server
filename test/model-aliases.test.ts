@@ -11,14 +11,11 @@ expect(
   "fast alias should set fast=true",
 );
 
-const quality = resolveCursorModel("composer-2.5-quality");
-expect(quality.id === "composer-2.5", "quality alias should map to composer-2.5");
-expect(
-  quality.params?.some((param) => param.id === "fast" && param.value === "false"),
-  "quality alias should set fast=false",
-);
-
 const base = resolveCursorModel("composer-2.5");
-expect(base.id === "composer-2.5" && !base.params, "base model should pass through unchanged");
+expect(base.id === "composer-2.5", "base model should map to composer-2.5");
+expect(
+  base.params?.some((param) => param.id === "fast" && param.value === "false"),
+  "base model should set fast=false",
+);
 
 console.log("model alias tests passed");

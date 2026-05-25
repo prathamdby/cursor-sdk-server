@@ -1,17 +1,17 @@
 {
   "name": "cursor-sdk-server",
   "version": "0.1.0",
-  "description": "Unofficial OpenAI Responses API HTTP server backed by @cursor/sdk agents",
   "private": true,
+  "description": "Unofficial OpenAI Responses API HTTP server backed by @cursor/sdk agents",
+  "homepage": "https://github.com/prathamdby/cursor-sdk-server",
+  "bugs": {
+    "url": "https://github.com/prathamdby/cursor-sdk-server/issues"
+  },
   "license": "MIT",
   "author": "Pratham Dubey",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/prathamdby/cursor-sdk-server.git"
-  },
-  "homepage": "https://github.com/prathamdby/cursor-sdk-server",
-  "bugs": {
-    "url": "https://github.com/prathamdby/cursor-sdk-server/issues"
   },
   "type": "module",
   "scripts": {

@@ -8,6 +8,4 @@ app.listen({
   hostname: config.host,
 });
 
-console.log(
-  `cursor-sdk-server listening on http://${config.host}:${config.port}/v1/responses`,
-);
+console.log(`cursor-sdk-server listening on http://${config.host}:${config.port}/v1/responses`);

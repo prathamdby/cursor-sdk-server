@@ -3,7 +3,6 @@ import type { CreateResponseRequest } from "../openai/types.ts";
 import { mapReasoningEffort } from "../openai/input.ts";
 
 const FAST_SUFFIX = "-fast";
-const QUALITY_SUFFIXES = ["-quality", "-slow"] as const;
 
 export function resolveCursorModel(
   requestModel: string,
@@ -17,19 +16,13 @@ export function resolveCursorModel(
     id = trimmed.slice(0, -FAST_SUFFIX.length);
     params.push({ id: "fast", value: "true" });
   } else {
-    for (const suffix of QUALITY_SUFFIXES) {
-      if (trimmed.endsWith(suffix)) {
-        id = trimmed.slice(0, -suffix.length);
-        params.push({ id: "fast", value: "false" });
-        break;
-      }
-    }
+    params.push({ id: "fast", value: "false" });
   }
 
   const thinking = mapReasoningEffort(reasoning);
   if (thinking) params.push(thinking);
 
-  return params.length > 0 ? { id, params } : { id };
+  return { id, params };
 }
 
 export function listOpenAIModelIds(models: ModelListItem[]): string[] {
@@ -39,7 +32,6 @@ export function listOpenAIModelIds(models: ModelListItem[]): string[] {
     ids.add(model.id);
     if (model.parameters?.some((parameter) => parameter.id === "fast")) {
       ids.add(`${model.id}${FAST_SUFFIX}`);
-      ids.add(`${model.id}-quality`);
     }
   }
 
