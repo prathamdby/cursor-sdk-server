@@ -11,59 +11,46 @@ function deltaEvent(text: string): ResponseStreamEvent {
   };
 }
 
-async function collectTimedEvents(
-  queue: ReturnType<typeof createEventQueue>,
-  done: Promise<unknown>,
-  maxMs: number,
-): Promise<{ events: ResponseStreamEvent[]; firstMs: number | null }> {
-  const events: ResponseStreamEvent[] = [];
-  let firstMs: number | null = null;
-  const start = Date.now();
-
-  const drain = (async () => {
-    for await (const event of queue.drainUntil(done)) {
-      if (firstMs === null) firstMs = Date.now() - start;
-      events.push(event);
-    }
-  })();
-
-  await Promise.race([drain, new Promise((resolve) => setTimeout(resolve, maxMs))]);
-
-  return { events, firstMs };
-}
-
 const queue = createEventQueue();
+let resolveDone: () => void;
 const done = new Promise<void>((resolve) => {
-  setTimeout(resolve, 200);
+  resolveDone = resolve;
 });
 
-const firstBatch = collectTimedEvents(queue, done, 50);
+const events: ResponseStreamEvent[] = [];
+const drain = (async () => {
+  for await (const event of queue.drainUntil(done)) {
+    events.push(event);
+  }
+})();
+
 queue.push([deltaEvent("a")]);
 
-setTimeout(() => {
-  queue.push([deltaEvent("b")]);
-}, 5);
+await new Promise((resolve) => setTimeout(resolve, 5));
+queue.push([deltaEvent("b")]);
 
-const firstResult = await firstBatch;
-const secondResult = await collectTimedEvents(queue, done, 200);
+const firstDeltaMs = await new Promise<number | null>((resolve) => {
+  const start = Date.now();
+  const check = () => {
+    if (events.length > 0) return resolve(Date.now() - start);
+    if (Date.now() - start > 50) return resolve(null);
+    setTimeout(check, 1);
+  };
+  check();
+});
 
-const allEvents = [...firstResult.events, ...secondResult.events];
+resolveDone!();
+await drain;
 
-if (firstResult.firstMs === null || firstResult.firstMs > 40) {
-  throw new Error(
-    `first delta should arrive before run completes, got firstMs=${firstResult.firstMs}`,
-  );
+if (firstDeltaMs === null || firstDeltaMs > 40) {
+  throw new Error(`first delta should arrive before run completes, got firstMs=${firstDeltaMs}`);
 }
 
-if (
-  !allEvents.some((event) => event.type === "response.output_text.delta" && event.delta === "a")
-) {
+if (!events.some((event) => event.type === "response.output_text.delta" && event.delta === "a")) {
   throw new Error("missing first queued delta");
 }
 
-if (
-  !allEvents.some((event) => event.type === "response.output_text.delta" && event.delta === "b")
-) {
+if (!events.some((event) => event.type === "response.output_text.delta" && event.delta === "b")) {
   throw new Error("missing second queued delta after wakeup race window");
 }
 

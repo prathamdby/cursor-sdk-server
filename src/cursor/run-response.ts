@@ -7,13 +7,17 @@ import type {
 import { buildCursorPrompt, materializePromptImages } from "../openai/input.ts";
 import { resolveCursorModel } from "./models.ts";
 import { finalizeResponse } from "../openai/response-object.ts";
-import { cancelledEvent, completedEvent, failedEvent, lifecycleEvents } from "../openai/stream.ts";
+import { cancelledEvent, failedEvent, lifecycleEvents } from "../openai/stream.ts";
 import { linkAgent } from "../store/responses.ts";
-import { agentErrorMessage, isBenignConnectrpcStreamError } from "./connect-errors.ts";
+import { agentErrorMessage } from "./connect-errors.ts";
 import { createEventQueue } from "./event-queue.ts";
 import {
+  canRecoverBenignStreamError,
+  emitStreamCompletion,
+  tryRecoverBenignStreamError,
+} from "./stream-recovery.ts";
+import {
   applyInteractionUpdate,
-  buildAssistantTextEvents,
   createStreamMappingState,
   finalizeItems,
   resolveFinalAssistantText,
@@ -26,6 +30,8 @@ export interface RunOptions {
   body: CreateResponseRequest;
   previousAgentId?: string;
   signal?: AbortSignal;
+  /** When false, HTTP client abort does not cancel the Cursor run (streaming default). */
+  cancelOnClientDisconnect?: boolean;
   onResponseCreated?: (response: OpenAIResponse) => void;
   onRunStarted?: (args: {
     response: OpenAIResponse;
@@ -43,28 +49,15 @@ export interface RunResult {
 
 const noopAbort = async (): Promise<void> => {};
 
-function hasPartialStreamContent(state: ReturnType<typeof createStreamMappingState>): boolean {
-  return Boolean(
-    state.bufferedAssistantText.trim() ||
-    state.messageItem ||
-    state.reasoningItem ||
-    state.response.output.length > 0,
+function wireClientAbort(run: { cancel: () => Promise<void> }, options: RunOptions): void {
+  if (options.cancelOnClientDisconnect === false || !options.signal) return;
+  options.signal.addEventListener(
+    "abort",
+    () => {
+      void run.cancel().catch(() => undefined);
+    },
+    { once: true },
   );
-}
-
-async function* emitStreamCompletion(
-  state: ReturnType<typeof createStreamMappingState>,
-  finalResult: string | undefined,
-): AsyncGenerator<ResponseStreamEvent> {
-  const finalText = resolveFinalAssistantText(finalResult, state.bufferedAssistantText);
-  for (const event of buildAssistantTextEvents(state, finalText)) {
-    yield event;
-  }
-  for (const event of finalizeItems(state)) {
-    yield event;
-  }
-  state.response = finalizeResponse(state.response, "completed", state.response.usage);
-  yield* completedEvent(state);
 }
 
 async function openAgent(options: RunOptions): Promise<SDKAgent> {
@@ -171,13 +164,7 @@ export async function* runResponseStream(options: RunOptions): AsyncGenerator<Re
 
       const abort = () => run.cancel();
       options.onRunStarted?.({ response: state.response, agentId: agent.agentId, abort });
-      options.signal?.addEventListener(
-        "abort",
-        () => {
-          void run.cancel().catch(() => undefined);
-        },
-        { once: true },
-      );
+      wireClientAbort(run, options);
 
       return run.wait();
     })();
@@ -210,8 +197,8 @@ export async function* runResponseStream(options: RunOptions): AsyncGenerator<Re
     yield* emitStreamCompletion(state, result.result);
     options.onResponseUpdated?.(state.response);
   } catch (error) {
-    if (isBenignConnectrpcStreamError(error) && hasPartialStreamContent(state)) {
-      yield* emitStreamCompletion(state, state.bufferedAssistantText);
+    if (canRecoverBenignStreamError(error, state)) {
+      yield* tryRecoverBenignStreamError(error, state);
       options.onResponseUpdated?.(state.response);
       return;
     }

@@ -8,9 +8,21 @@ export function createEventQueue() {
   const queue: ResponseStreamEvent[] = [];
   const waiters: Array<() => void> = [];
 
+  const clearWaiters = () => {
+    waiters.splice(0, waiters.length);
+  };
+
   const notify = () => {
     const pending = waiters.splice(0, waiters.length);
     for (const resolve of pending) resolve();
+  };
+
+  const dequeueAll = function* (): Generator<ResponseStreamEvent> {
+    while (queue.length > 0) {
+      const event = queue.shift();
+      if (event === undefined) break;
+      yield event;
+    }
   };
 
   return {
@@ -22,9 +34,7 @@ export function createEventQueue() {
     async *drainUntil(done: Promise<unknown>): AsyncGenerator<ResponseStreamEvent> {
       const donePromise = done.then(() => "done" as const);
       while (true) {
-        while (queue.length > 0) {
-          yield queue.shift()!;
-        }
+        yield* dequeueAll();
 
         const result = await Promise.race([
           donePromise,
@@ -34,9 +44,8 @@ export function createEventQueue() {
         ]);
 
         if (result === "done") {
-          while (queue.length > 0) {
-            yield queue.shift()!;
-          }
+          clearWaiters();
+          yield* dequeueAll();
           return;
         }
       }
