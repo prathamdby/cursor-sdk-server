@@ -139,4 +139,23 @@ const trimFinalDeltas = trimFinal.filter((event) => event.type === "response.out
 expect(trimFinalDeltas.length === 1, "trim-aware final replay should emit one suffix delta");
 expect(trimFinalDeltas[0]?.delta === " world", "trim-aware final replay suffix mismatch");
 
+const usageState = createStreamMappingState(baseBody);
+applyInteractionUpdate(
+  {
+    type: "turn-ended",
+    usage: { inputTokens: 1200, outputTokens: 80, cacheReadTokens: 200_000 },
+  },
+  usageState,
+);
+expect(usageState.response.usage?.input_tokens === 1200, "turn-ended should map input tokens");
+expect(usageState.response.usage?.output_tokens === 80, "turn-ended should map output tokens");
+expect(
+  usageState.response.usage?.total_tokens === 1280,
+  "turn-ended should exclude Cursor cache reads from total",
+);
+expect(
+  !usageState.response.usage?.input_tokens_details,
+  "turn-ended should not expose Cursor cache reads as client usage",
+);
+
 console.log("stream mapping tests passed");
