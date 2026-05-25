@@ -83,8 +83,5 @@ export function usageFromTurnEnded(usage?: {
     input_tokens: input,
     output_tokens: output,
     total_tokens: input + output,
-    input_tokens_details: usage.cacheReadTokens
-      ? { cached_tokens: usage.cacheReadTokens }
-      : undefined,
   };
 }
