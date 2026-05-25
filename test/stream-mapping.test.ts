@@ -143,15 +143,18 @@ const usageState = createStreamMappingState(baseBody);
 applyInteractionUpdate(
   {
     type: "turn-ended",
-    usage: { inputTokens: 1200, outputTokens: 80, cacheReadTokens: 200_000 },
+    usage: { inputTokens: 178_862, outputTokens: 80, cacheReadTokens: 200_000 },
   },
   usageState,
 );
-expect(usageState.response.usage?.input_tokens === 1200, "turn-ended should map input tokens");
+expect(
+  usageState.response.usage?.input_tokens === 0,
+  "turn-ended should not expose Cursor internal input tokens",
+);
 expect(usageState.response.usage?.output_tokens === 80, "turn-ended should map output tokens");
 expect(
-  usageState.response.usage?.total_tokens === 1280,
-  "turn-ended should exclude Cursor cache reads from total",
+  usageState.response.usage?.total_tokens === 80,
+  "turn-ended should exclude Cursor internal context from total",
 );
 expect(
   !usageState.response.usage?.input_tokens_details,

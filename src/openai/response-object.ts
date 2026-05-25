@@ -71,12 +71,62 @@ export function finalizeResponse(
   };
 }
 
-// Cursor cacheReadTokens are internal SDK accounting; do not map them to OpenAI cached_tokens.
+function estimateTextTokens(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) return 0;
+  return Math.max(1, Math.ceil(trimmed.length / 4));
+}
+
+function estimateContentTokens(content: unknown): number {
+  if (typeof content === "string") return estimateTextTokens(content);
+  if (!Array.isArray(content)) return 0;
+
+  return content.reduce((total, part) => {
+    if (!part || typeof part !== "object") return total;
+    const record = part as Record<string, unknown>;
+    if (
+      (record.type === "input_text" || record.type === "output_text") &&
+      typeof record.text === "string"
+    ) {
+      return total + estimateTextTokens(record.text);
+    }
+    if (record.type === "input_file" && typeof record.filename === "string") {
+      return total + estimateTextTokens(record.filename);
+    }
+    return total;
+  }, 0);
+}
+
+export function estimateClientInputTokens(body: CreateResponseRequest): number {
+  let total = estimateTextTokens(body.instructions ?? "");
+  if (typeof body.input === "string") return total + estimateTextTokens(body.input);
+  if (!Array.isArray(body.input)) return total;
+
+  for (const item of body.input) {
+    if (item.type === "function_call") {
+      total += estimateTextTokens(item.name) + estimateTextTokens(item.arguments);
+      continue;
+    }
+    if (item.type === "function_call_output") {
+      total += estimateTextTokens(item.call_id) + estimateContentTokens(item.output);
+      continue;
+    }
+    if (item.type === "message") {
+      total += estimateContentTokens(item.content);
+    }
+  }
+
+  return total;
+}
+
+// Cursor SDK input/cache tokens include hidden agent context; expose only client-visible usage.
 export function usageFromTurnEnded(
-  usage?: Pick<{ inputTokens: number; outputTokens: number }, "inputTokens" | "outputTokens">,
+  body: CreateResponseRequest,
+  usage?: Pick<{ outputTokens: number }, "outputTokens">,
 ): ResponseUsage | undefined {
   if (!usage) return undefined;
-  const { inputTokens, outputTokens } = usage;
+  const inputTokens = estimateClientInputTokens(body);
+  const { outputTokens } = usage;
   return {
     input_tokens: inputTokens,
     output_tokens: outputTokens,

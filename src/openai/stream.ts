@@ -1,4 +1,9 @@
-import type { ResponseStreamEvent, OpenAIResponse, ResponseOutputItem } from "../openai/types.ts";
+import type {
+  CreateResponseRequest,
+  ResponseStreamEvent,
+  OpenAIResponse,
+  ResponseOutputItem,
+} from "../openai/types.ts";
 
 export function encodeSseEvent(
   event: ResponseStreamEvent | "[DONE]",
@@ -63,6 +68,7 @@ export function createSseStream(
 
 export interface StreamState {
   response: OpenAIResponse;
+  body: CreateResponseRequest;
   outputIndex: number;
   messageItem?: Extract<ResponseOutputItem, { type: "message" }>;
   reasoningItem?: Extract<ResponseOutputItem, { type: "reasoning" }>;

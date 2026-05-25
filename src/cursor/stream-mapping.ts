@@ -16,6 +16,7 @@ import type { StreamState } from "../openai/stream.ts";
 export function createStreamMappingState(body: CreateResponseRequest): StreamState {
   return {
     response: createBaseResponse(body),
+    body,
     outputIndex: 0,
     bufferedAssistantText: "",
   };
@@ -144,7 +145,7 @@ export function applyInteractionUpdate(
   }
 
   if (update.type === "turn-ended" && update.usage) {
-    state.response.usage = usageFromTurnEnded(update.usage);
+    state.response.usage = usageFromTurnEnded(state.body, update.usage);
   }
 
   return [];
