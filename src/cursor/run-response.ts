@@ -1,10 +1,4 @@
-import {
-  Agent,
-  Cursor,
-  CursorAgentError,
-  type InteractionUpdate,
-  type SDKAgent,
-} from "@cursor/sdk";
+import { Agent, Cursor, type InteractionUpdate, type SDKAgent } from "@cursor/sdk";
 import type {
   CreateResponseRequest,
   OpenAIResponse,
@@ -28,6 +22,7 @@ import {
   type StreamState,
 } from "../openai/stream.ts";
 import { linkAgent } from "../store/responses.ts";
+import { agentErrorMessage } from "./connect-errors.ts";
 
 export interface RunOptions {
   apiKey: string;
@@ -179,10 +174,16 @@ function outputTextPart(item: Extract<OpenAIResponse["output"][number], { type: 
   return part?.type === "output_text" ? part : undefined;
 }
 
-function resolveFinalAssistantText(finalResult: string | undefined, buffered: string): string {
-  const final = finalResult?.trim();
-  if (final) return final;
-  return buffered.trim();
+export function resolveFinalAssistantText(
+  finalResult: string | undefined,
+  buffered: string,
+): string {
+  const final = finalResult?.trim() ?? "";
+  const streamed = buffered.trim();
+  if (!final) return streamed;
+  if (!streamed) return final;
+  if (streamed.length > final.length) return streamed;
+  return final;
 }
 
 function applyDelta(update: InteractionUpdate, state: StreamState): ResponseStreamEvent[] {
@@ -203,13 +204,6 @@ function applyDelta(update: InteractionUpdate, state: StreamState): ResponseStre
         output_index: outputIndex,
         item_id: item.id,
         summary_index: 0,
-        delta: update.text,
-      },
-      {
-        type: "response.reasoning_text.delta",
-        output_index: outputIndex,
-        item_id: item.id,
-        content_index: 0,
         delta: update.text,
       },
     ];
@@ -321,7 +315,11 @@ export async function runResponseSync(options: RunOptions): Promise<RunResult> {
     const prompt = materializePromptImages(buildCursorPrompt(options.body));
     const run = await agent.send(prompt, {
       onDelta: ({ update }) => {
-        applyDelta(update, state);
+        try {
+          applyDelta(update, state);
+        } catch {
+          // Ignore malformed delta payloads from the SDK stream.
+        }
       },
     });
 
@@ -354,14 +352,8 @@ export async function runResponseSync(options: RunOptions): Promise<RunResult> {
     options.onResponseUpdated?.(state.response);
     return { response: state.response, agentId, abort };
   } catch (error) {
-    const message =
-      error instanceof CursorAgentError
-        ? error.message
-        : error instanceof Error
-          ? error.message
-          : String(error);
     state.response = finalizeResponse(state.response, "failed", state.response.usage, {
-      message,
+      message: agentErrorMessage(error),
       code: "server_error",
     });
     options.onResponseUpdated?.(state.response);
@@ -391,7 +383,11 @@ export async function* runResponseStream(options: RunOptions): AsyncGenerator<Re
     const runTask = (async () => {
       const run = await agent.send(prompt, {
         onDelta: ({ update }) => {
-          eventQueue.push(applyDelta(update, state));
+          try {
+            eventQueue.push(applyDelta(update, state));
+          } catch {
+            // Ignore malformed delta payloads from the SDK stream.
+          }
         },
       });
 
@@ -446,16 +442,7 @@ export async function* runResponseStream(options: RunOptions): AsyncGenerator<Re
     options.onResponseUpdated?.(state.response);
     yield* completedEvent(state);
   } catch (error) {
-    if (error instanceof CursorAgentError) {
-      state.response = finalizeResponse(state.response, "failed", state.response.usage, {
-        message: error.message,
-        code: "server_error",
-      });
-      options.onResponseUpdated?.(state.response);
-      yield* failedEvent(state, error.message);
-      return;
-    }
-    const message = error instanceof Error ? error.message : String(error);
+    const message = agentErrorMessage(error);
     state.response = finalizeResponse(state.response, "failed", state.response.usage, {
       message,
       code: "server_error",
@@ -471,4 +458,17 @@ export async function* runResponseStream(options: RunOptions): AsyncGenerator<Re
 
 export async function listCursorModels(apiKey: string) {
   return Cursor.models.list({ apiKey });
+}
+
+/** @internal test helpers */
+export function createStreamStateForTest(body: CreateResponseRequest): StreamState {
+  return createStreamState(body);
+}
+
+/** @internal test helpers */
+export function applyInteractionUpdateForTest(
+  update: InteractionUpdate,
+  state: StreamState,
+): ResponseStreamEvent[] {
+  return applyDelta(update, state);
 }

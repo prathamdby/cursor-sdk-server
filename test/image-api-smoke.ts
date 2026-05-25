@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
+import { getTestBaseUrl } from "./helpers/env.ts";
 
-const port = Number(Bun.env.PORT ?? 8765);
-const baseUrl = `http://127.0.0.1:${port}`;
+const baseUrl = getTestBaseUrl();
 const imagePath =
   process.argv[2] ?? "/home/prathamd/Downloads/Telegram Desktop/photo_2026-05-25_20-38-03.jpg";
 
