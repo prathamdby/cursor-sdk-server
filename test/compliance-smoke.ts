@@ -1,5 +1,6 @@
-const port = Number(Bun.env.PORT ?? 8765);
-const baseUrl = `http://127.0.0.1:${port}`;
+import { getTestBaseUrl } from "./helpers/env.ts";
+
+const baseUrl = getTestBaseUrl();
 
 function headers(): Record<string, string> {
   return {
@@ -169,6 +170,34 @@ async function main() {
     sequenceNumbers.every((n, i) => n === i),
     `sequence_number not monotonic: ${sequenceNumbers.join(",")}`,
   );
+
+  const reasoningStream = await request("/v1/responses", {
+    method: "POST",
+    body: JSON.stringify({
+      model: "composer-2.5",
+      input: [{ role: "user", content: [{ type: "input_text", text: "Say hello in one word." }] }],
+      stream: true,
+      store: false,
+      reasoning: { effort: "medium", summary: "auto" },
+    }),
+  });
+  await expect(reasoningStream.ok, `reasoning stream response failed: ${reasoningStream.status}`);
+  const reasoningEvents = await readSse(reasoningStream);
+  const reasoningJsonEvents = reasoningEvents.filter(
+    (event): event is Record<string, unknown> => event !== "[DONE]",
+  );
+  const hasSummaryReasoningDelta = reasoningJsonEvents.some(
+    (event) => event.type === "response.reasoning_summary_text.delta",
+  );
+  const hasReasoningTextDelta = reasoningJsonEvents.some(
+    (event) => event.type === "response.reasoning_text.delta",
+  );
+  if (hasSummaryReasoningDelta) {
+    await expect(
+      !hasReasoningTextDelta,
+      "reasoning stream should not emit both summary and reasoning_text delta families",
+    );
+  }
 
   const redPixel =
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mP8z4/EHwAFAgGAKr+1/wAAAABJRU5ErkJggg==";
