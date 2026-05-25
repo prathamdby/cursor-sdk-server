@@ -9,7 +9,8 @@ import { resolveCursorModel } from "./models.ts";
 import { finalizeResponse } from "../openai/response-object.ts";
 import { cancelledEvent, completedEvent, failedEvent, lifecycleEvents } from "../openai/stream.ts";
 import { linkAgent } from "../store/responses.ts";
-import { agentErrorMessage } from "./connect-errors.ts";
+import { agentErrorMessage, isBenignConnectrpcStreamError } from "./connect-errors.ts";
+import { createEventQueue } from "./event-queue.ts";
 import {
   applyInteractionUpdate,
   buildAssistantTextEvents,
@@ -42,39 +43,28 @@ export interface RunResult {
 
 const noopAbort = async (): Promise<void> => {};
 
-function createEventQueue() {
-  const queue: ResponseStreamEvent[] = [];
-  let wake: (() => void) | null = null;
+function hasPartialStreamContent(state: ReturnType<typeof createStreamMappingState>): boolean {
+  return Boolean(
+    state.bufferedAssistantText.trim() ||
+    state.messageItem ||
+    state.reasoningItem ||
+    state.response.output.length > 0,
+  );
+}
 
-  return {
-    push(events: ResponseStreamEvent[]) {
-      if (events.length === 0) return;
-      queue.push(...events);
-      wake?.();
-      wake = null;
-    },
-    async *drainUntil(done: Promise<unknown>): AsyncGenerator<ResponseStreamEvent> {
-      while (true) {
-        while (queue.length > 0) {
-          yield queue.shift()!;
-        }
-
-        const result = await Promise.race([
-          done.then(() => "done" as const),
-          new Promise<"tick">((resolve) => {
-            wake = () => resolve("tick");
-          }),
-        ]);
-
-        if (result === "done") {
-          while (queue.length > 0) {
-            yield queue.shift()!;
-          }
-          return;
-        }
-      }
-    },
-  };
+async function* emitStreamCompletion(
+  state: ReturnType<typeof createStreamMappingState>,
+  finalResult: string | undefined,
+): AsyncGenerator<ResponseStreamEvent> {
+  const finalText = resolveFinalAssistantText(finalResult, state.bufferedAssistantText);
+  for (const event of buildAssistantTextEvents(state, finalText)) {
+    yield event;
+  }
+  for (const event of finalizeItems(state)) {
+    yield event;
+  }
+  state.response = finalizeResponse(state.response, "completed", state.response.usage);
+  yield* completedEvent(state);
 }
 
 async function openAgent(options: RunOptions): Promise<SDKAgent> {
@@ -217,19 +207,15 @@ export async function* runResponseStream(options: RunOptions): AsyncGenerator<Re
       return;
     }
 
-    const finalText = resolveFinalAssistantText(result.result, state.bufferedAssistantText);
-    for (const event of buildAssistantTextEvents(state, finalText)) {
-      yield event;
-    }
-
-    for (const event of finalizeItems(state)) {
-      yield event;
-    }
-
-    state.response = finalizeResponse(state.response, "completed", state.response.usage);
+    yield* emitStreamCompletion(state, result.result);
     options.onResponseUpdated?.(state.response);
-    yield* completedEvent(state);
   } catch (error) {
+    if (isBenignConnectrpcStreamError(error) && hasPartialStreamContent(state)) {
+      yield* emitStreamCompletion(state, state.bufferedAssistantText);
+      options.onResponseUpdated?.(state.response);
+      return;
+    }
+
     const message = agentErrorMessage(error);
     state.response = finalizeResponse(state.response, "failed", state.response.usage, {
       message,

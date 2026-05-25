@@ -15,10 +15,26 @@ export function encodeSseEvent(
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
 
-const KEEPALIVE_MS = 15_000;
+/** Proxies (Traefik/Dokploy) often ignore SSE comment lines for idle timeouts. */
+const KEEPALIVE_MS = 10_000;
+
+export function createSseHeartbeatEvent(responseId: string): ResponseStreamEvent {
+  return {
+    type: "response.in_progress",
+    response: {
+      id: responseId,
+      object: "response",
+      created_at: Math.floor(Date.now() / 1000),
+      status: "in_progress",
+      model: "",
+      output: [],
+    },
+  };
+}
 
 export function createSseStream(
   events: AsyncIterable<ResponseStreamEvent>,
+  getHeartbeatResponseId?: () => string | undefined,
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   let sequenceNumber = 0;
@@ -28,7 +44,12 @@ export function createSseStream(
       const keepalive = setInterval(() => {
         if (cancelled) return;
         try {
-          controller.enqueue(encoder.encode(": keepalive\n\n"));
+          const responseId = getHeartbeatResponseId?.();
+          if (responseId) {
+            controller.enqueue(encoder.encode(encodeSseEvent(createSseHeartbeatEvent(responseId))));
+          } else {
+            controller.enqueue(encoder.encode(": keepalive\n\n"));
+          }
         } catch {
           cancelled = true;
         }

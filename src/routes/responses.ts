@@ -21,13 +21,16 @@ export const responsesRoutes = new Elysia({ prefix: "/v1" })
       const apiKey = requireCursorApiKey();
 
       const previousAgentId = resolveAgentId(createBody.previous_response_id ?? undefined);
+      let heartbeatResponseId: string | undefined;
       const runOptions: RunOptions = {
         apiKey,
         cwd: config.agentCwd,
         body: createBody,
         previousAgentId,
-        signal: request.signal,
+        // Streaming: do not cancel Cursor runs when the HTTP client/proxy drops (common on Dokploy).
+        signal: createBody.stream ? undefined : request.signal,
         onResponseCreated: (response) => {
+          heartbeatResponseId = response.id;
           storeResponse(response.id, { response });
         },
         onRunStarted: ({ response, agentId, abort }) => {
@@ -71,6 +74,7 @@ export const responsesRoutes = new Elysia({ prefix: "/v1" })
               }
             }
           })(),
+          () => heartbeatResponseId,
         );
 
         return new Response(stream);
