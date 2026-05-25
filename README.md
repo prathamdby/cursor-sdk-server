@@ -84,11 +84,12 @@ Compose reads env from `.env` via `env_file`. To expose the service on your LAN,
 
 ## Configuration
 
-| Variable         | Default      | Description                |
-| ---------------- | ------------ | -------------------------- |
-| `CURSOR_API_KEY` | _(required)_ | Server-side Cursor API key |
-| `PORT`           | `8765`       | Listen port                |
-| `HOST`           | `0.0.0.0`    | Bind address               |
+| Variable           | Default      | Description                                     |
+| ------------------ | ------------ | ----------------------------------------------- |
+| `CURSOR_API_KEY`   | _(required)_ | Server-side Cursor API key                      |
+| `PORT`             | `8765`       | Listen port                                     |
+| `HOST`             | `0.0.0.0`    | Bind address                                    |
+| `SSE_KEEPALIVE_MS` | `10000`      | SSE idle ping interval (ms) for reverse proxies |
 
 Use `bun --env-file=.env` for `dev`, `start`, and tests. With Docker, set the same variables in `.env` for Compose.
 
@@ -106,6 +107,15 @@ Use `bun --env-file=.env` for `dev`, `start`, and tests. With Docker, set the sa
 | `GET`  | `/health`                  | Health check                             |
 
 Output format: plain text only (`text.format.type` must be `text` if set). Many OpenAI parameters are intentionally unsupported — see [Limitations](#limitations).
+
+### Streaming behavior
+
+- **Sync requests** cancel the Cursor run when the HTTP client disconnects (`cancelOnClientDisconnect: true`).
+- **Streaming requests** do not tie `request.signal` abort to the agent (avoids proxy idle drops killing long runs). When the SSE client disconnects, the server calls the stored run `abort` to stop the agent.
+- **Keepalives** send periodic `response.in_progress` snapshots (full output state) so reverse proxies see traffic without wiping client state.
+- **Benign ConnectRPC HTTP/2 teardown** after partial output completes the stream instead of failing hard.
+
+Behind Traefik or similar, raise the router/service idle timeout above your longest expected run if streams still drop.
 
 ## Limitations
 

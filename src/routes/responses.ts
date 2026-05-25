@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { assertCreateBody } from "../openai/errors.ts";
 import { parseCreateResponseBody } from "../openai/validate.ts";
 import { createSseStream } from "../openai/stream.ts";
+import type { OpenAIResponse } from "../openai/types.ts";
 import { runResponseStream, runResponseSync } from "../cursor/run-response.ts";
 import type { RunOptions } from "../cursor/run-response.ts";
 import {
@@ -21,16 +22,22 @@ export const responsesRoutes = new Elysia({ prefix: "/v1" })
       const apiKey = requireCursorApiKey();
 
       const previousAgentId = resolveAgentId(createBody.previous_response_id ?? undefined);
+      let heartbeatSnapshot: OpenAIResponse | undefined;
+      let runAbort: (() => Promise<void>) | undefined;
+
       const runOptions: RunOptions = {
         apiKey,
         cwd: config.agentCwd,
         body: createBody,
         previousAgentId,
         signal: request.signal,
+        cancelOnClientDisconnect: !createBody.stream,
         onResponseCreated: (response) => {
+          heartbeatSnapshot = response;
           storeResponse(response.id, { response });
         },
         onRunStarted: ({ response, agentId, abort }) => {
+          runAbort = abort;
           storeResponse(response.id, { response, agentId, abort });
         },
         onResponseUpdated: (response) => {
@@ -53,6 +60,9 @@ export const responsesRoutes = new Elysia({ prefix: "/v1" })
           (async function* () {
             let terminalResponse;
             for await (const event of runResponseStream(runOptions)) {
+              if ("response" in event) {
+                heartbeatSnapshot = event.response;
+              }
               if (
                 event.type === "response.completed" ||
                 event.type === "response.failed" ||
@@ -71,6 +81,12 @@ export const responsesRoutes = new Elysia({ prefix: "/v1" })
               }
             }
           })(),
+          {
+            getHeartbeatSnapshot: () => heartbeatSnapshot,
+            onClientDisconnect: () => {
+              void runAbort?.().catch(() => undefined);
+            },
+          },
         );
 
         return new Response(stream);

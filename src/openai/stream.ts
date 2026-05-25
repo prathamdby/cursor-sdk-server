@@ -15,10 +15,29 @@ export function encodeSseEvent(
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
 
-const KEEPALIVE_MS = 15_000;
+/** Idle timeout for reverse proxies; override with SSE_KEEPALIVE_MS. */
+export const SSE_KEEPALIVE_MS = Number(Bun.env.SSE_KEEPALIVE_MS ?? 10_000);
+
+export interface SseStreamOptions {
+  /** Full response snapshot for proxy keepalives (avoids stub lifecycle events). */
+  getHeartbeatSnapshot?: () => OpenAIResponse | undefined;
+  /** Called when the HTTP client closes the SSE connection. */
+  onClientDisconnect?: () => void;
+}
+
+export function encodeSseKeepaliveChunk(snapshot?: OpenAIResponse): string {
+  if (snapshot) {
+    return encodeSseEvent({
+      type: "response.in_progress",
+      response: structuredClone(snapshot),
+    });
+  }
+  return ": keepalive\n\n";
+}
 
 export function createSseStream(
   events: AsyncIterable<ResponseStreamEvent>,
+  options?: SseStreamOptions,
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   let sequenceNumber = 0;
@@ -28,11 +47,12 @@ export function createSseStream(
       const keepalive = setInterval(() => {
         if (cancelled) return;
         try {
-          controller.enqueue(encoder.encode(": keepalive\n\n"));
+          const snapshot = options?.getHeartbeatSnapshot?.();
+          controller.enqueue(encoder.encode(encodeSseKeepaliveChunk(snapshot)));
         } catch {
           cancelled = true;
         }
-      }, KEEPALIVE_MS);
+      }, SSE_KEEPALIVE_MS);
 
       try {
         for await (const event of events) {
@@ -62,6 +82,7 @@ export function createSseStream(
     },
     cancel() {
       cancelled = true;
+      options?.onClientDisconnect?.();
     },
   });
 }
