@@ -1,0 +1,12 @@
+node_modules/
+.bun/
+dist/
+.git/
+.env
+.env.*
+!.env.example
+test/
+coverage/
+*.log
+.oxlintcache
+.cursor/

@@ -50,6 +50,38 @@ curl -s http://127.0.0.1:8765/v1/responses \
   }'
 ```
 
+## Docker
+
+Requires [Docker Engine](https://docs.docker.com/engine/) and Compose v2.
+
+```bash
+cp .env.example .env
+# Set CURSOR_API_KEY in .env
+
+docker compose up -d --build
+docker compose logs -f
+```
+
+Default URL: `http://127.0.0.1:8765/v1` (bound to localhost only).
+
+**Try it:**
+
+```bash
+curl -s http://127.0.0.1:8765/health
+curl -s http://127.0.0.1:8765/v1/models
+curl -s http://127.0.0.1:8765/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "composer-2.5-fast",
+    "input": "Reply with exactly: hello from cursor-sdk-server",
+    "stream": false
+  }'
+```
+
+Stop the stack with `docker compose down`.
+
+Compose reads env from `.env` via `env_file`. To expose the service on your LAN, change the port mapping in `docker-compose.yml` from `127.0.0.1:8765:8765` to `8765:8765`. Stored responses are still in-memory and lost on container restart.
+
 ## Configuration
 
 | Variable         | Default      | Description                |
@@ -58,7 +90,7 @@ curl -s http://127.0.0.1:8765/v1/responses \
 | `PORT`           | `8765`       | Listen port                |
 | `HOST`           | `0.0.0.0`    | Bind address               |
 
-Use `bun --env-file=.env` for `dev`, `start`, and tests.
+Use `bun --env-file=.env` for `dev`, `start`, and tests. With Docker, set the same variables in `.env` for Compose.
 
 **Agent workspace:** `/tmp/cursor-sdk-server` (created at startup, not configurable).  
 **Client auth:** `Authorization` headers from clients are ignored.
