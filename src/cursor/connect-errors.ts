@@ -1,21 +1,15 @@
 export function isBenignConnectrpcStreamError(reason: unknown): boolean {
-  const parts: string[] = [];
+  if (!(reason instanceof Error)) return false;
 
-  if (reason instanceof Error) {
-    parts.push(reason.message);
-    if ("code" in reason && typeof reason.code === "string") {
-      parts.push(reason.code);
-    }
-  } else {
-    parts.push(String(reason));
-  }
+  const message = reason.message;
+  const code = "code" in reason && typeof reason.code === "string" ? reason.code : "";
 
-  const text = parts.join(" ");
-  return (
-    text.includes("NGHTTP2_FRAME_SIZE_ERROR") ||
-    text.includes("ERR_HTTP2_STREAM_ERROR") ||
-    (text.includes("Stream closed with error code") && text.includes("NGHTTP2"))
-  );
+  const isStreamClosedWithNghttp2 =
+    message.includes("Stream closed with error code") && message.includes("NGHTTP2");
+
+  if (isStreamClosedWithNghttp2) return true;
+
+  return code === "ERR_HTTP2_STREAM_ERROR" && message.includes("Stream closed with error code");
 }
 
 export function agentErrorMessage(error: unknown): string {

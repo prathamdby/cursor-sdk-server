@@ -1,8 +1,8 @@
 import {
-  applyInteractionUpdateForTest,
-  createStreamStateForTest,
+  applyInteractionUpdate,
+  createStreamMappingState,
   resolveFinalAssistantText,
-} from "../src/cursor/run-response.ts";
+} from "../src/cursor/stream-mapping.ts";
 
 function expect(condition: unknown, message: string): void {
   if (!condition) throw new Error(message);
@@ -10,13 +10,13 @@ function expect(condition: unknown, message: string): void {
 
 const baseBody = { model: "composer-2.5" };
 
-const state = createStreamStateForTest(baseBody);
+const state = createStreamMappingState(baseBody);
 
-const firstThinking = applyInteractionUpdateForTest(
+const firstThinking = applyInteractionUpdate(
   { type: "thinking-delta", text: "The user intends to " },
   state,
 );
-const secondThinking = applyInteractionUpdateForTest(
+const secondThinking = applyInteractionUpdate(
   { type: "thinking-delta", text: "implement API keys." },
   state,
 );
@@ -48,17 +48,20 @@ expect(
   "should fall back to buffered text when SDK result is empty",
 );
 expect(
-  resolveFinalAssistantText("short", "much longer streamed assistant answer") ===
-    "much longer streamed assistant answer",
-  "should prefer longer buffered text over shorter SDK result",
+  resolveFinalAssistantText("Hello", "Hello world from stream") === "Hello world from stream",
+  "should prefer buffered text when final is a prefix of streamed",
 );
 expect(
-  resolveFinalAssistantText("complete final answer", "partial") === "complete final answer",
-  "should keep SDK result when it is longer than buffered text",
+  resolveFinalAssistantText("complete final answer", "complete final") === "complete final answer",
+  "should prefer final text when streamed is a prefix of final",
 );
 expect(
   resolveFinalAssistantText("  trimmed  ", "  trimmed  ") === "trimmed",
   "should trim both sources before comparing",
+);
+expect(
+  resolveFinalAssistantText("unrelated final", "unrelated streamed") === "unrelated final",
+  "should keep final text when neither source is a prefix of the other",
 );
 
 console.log("stream mapping tests passed");

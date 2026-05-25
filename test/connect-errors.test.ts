@@ -12,13 +12,25 @@ expect(
 );
 expect(
   isBenignConnectrpcStreamError(
+    Object.assign(new Error("Stream closed with error code NGHTTP2_PROTOCOL_ERROR"), {
+      code: "ERR_HTTP2_STREAM_ERROR",
+    }),
+  ),
+  "should detect ERR_HTTP2_STREAM_ERROR with stream-closed message",
+);
+expect(
+  !isBenignConnectrpcStreamError(
     Object.assign(new Error("stream error"), { code: "ERR_HTTP2_STREAM_ERROR" }),
   ),
-  "should detect ERR_HTTP2_STREAM_ERROR code",
+  "ERR_HTTP2_STREAM_ERROR alone should not be benign without stream-closed message",
 );
 expect(
   !isBenignConnectrpcStreamError(new Error("something else broke")),
   "should not mark unrelated errors benign",
+);
+expect(
+  !isBenignConnectrpcStreamError(new Error("NGHTTP2_FRAME_SIZE_ERROR")),
+  "NGHTTP2 substring alone should not be benign without stream-closed message",
 );
 expect(agentErrorMessage(new Error("boom")) === "boom", "should extract error message");
 

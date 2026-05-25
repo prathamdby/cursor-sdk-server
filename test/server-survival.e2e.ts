@@ -10,7 +10,13 @@ const baseUrl = getTestBaseUrl();
 const redPixel =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mP8z4/EHwAFAgGAKr+1/wAAAABJRU5ErkJggg==";
 
-type Step = { name: string; init: RequestInit; assert?: (detail: string) => void };
+type Step = {
+  name: string;
+  init: RequestInit;
+  assert?: (detail: string) => void;
+  /** When true, only server health after the request is asserted (not response body). */
+  survivalOnly?: boolean;
+};
 
 async function health(): Promise<boolean> {
   try {
@@ -122,7 +128,10 @@ const steps: Step[] = [
     },
   },
   {
+    // Survival-only: image runs often trigger benign connectrpc NGHTTP2 teardown errors.
+    // Strict image correctness is covered in compliance-smoke.ts.
     name: "sync-image",
+    survivalOnly: true,
     init: {
       method: "POST",
       body: JSON.stringify({
@@ -140,16 +149,6 @@ const steps: Step[] = [
         ],
       }),
     },
-    assert(detail) {
-      const body = JSON.parse(detail) as { status?: string; output_text?: string };
-      if (body.status !== "completed") {
-        console.warn(
-          `sync-image returned status=${body.status}; server survival is the primary check`,
-        );
-        return;
-      }
-      assertOk(/red/i.test(body.output_text ?? ""), `sync-image text: ${body.output_text}`);
-    },
   },
 ];
 
@@ -161,10 +160,14 @@ async function runServerSurvivalE2e() {
     const timeoutMs = step.name === "sync-image" ? 90_000 : 120_000;
     const result = await runStep(step, timeoutMs);
 
-    if (!result.ok && step.name === "sync-image") {
-      console.warn(
-        `sync-image request incomplete: status=${result.status} ${result.detail.slice(0, 120)}`,
-      );
+    if (step.survivalOnly) {
+      if (!result.ok) {
+        console.warn(
+          `${step.name} request incomplete (survival-only): status=${result.status} ${result.detail.slice(0, 120)}`,
+        );
+      } else {
+        step.assert?.(result.detail);
+      }
     } else {
       assertOk(
         result.ok,

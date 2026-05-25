@@ -9,6 +9,14 @@ function logBenignStreamError(source: "unhandledRejection" | "uncaughtException"
   );
 }
 
+function fatalProcessError(
+  source: "unhandledRejection" | "uncaughtException",
+  reason: unknown,
+): never {
+  console.error(`[cursor-sdk-server] fatal ${source}:`, reason);
+  process.exit(1);
+}
+
 export function installProcessGuards(): void {
   if (installed) return;
   installed = true;
@@ -18,6 +26,7 @@ export function installProcessGuards(): void {
       logBenignStreamError("unhandledRejection", reason);
       return;
     }
+    fatalProcessError("unhandledRejection", reason);
   });
 
   process.on("uncaughtException", (error) => {
@@ -25,5 +34,6 @@ export function installProcessGuards(): void {
       logBenignStreamError("uncaughtException", error);
       return;
     }
+    fatalProcessError("uncaughtException", error);
   });
 }

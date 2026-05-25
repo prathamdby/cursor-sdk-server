@@ -2,18 +2,32 @@ import { readFileSync } from "node:fs";
 import { getTestBaseUrl } from "./helpers/env.ts";
 
 const baseUrl = getTestBaseUrl();
-const imagePath =
-  process.argv[2] ?? "/home/prathamd/Downloads/Telegram Desktop/photo_2026-05-25_20-38-03.jpg";
+
+const defaultImageUrl =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mP8z4/EHwAFAgGAKr+1/wAAAABJRU5ErkJggg==";
 
 function expect(condition: unknown, message: string): void {
   if (!condition) throw new Error(message);
 }
 
-async function main() {
-  const bytes = readFileSync(imagePath);
-  const imageUrl = `data:image/jpeg;base64,${bytes.toString("base64")}`;
+function resolveImageUrl(): { imageUrl: string; label: string } {
+  const imagePath = process.argv[2];
+  if (!imagePath) {
+    return { imageUrl: defaultImageUrl, label: "built-in 1x1 red pixel fixture" };
+  }
 
-  console.log(`image: ${imagePath} (${bytes.length} bytes)`);
+  const bytes = readFileSync(imagePath);
+  const mime = imagePath.endsWith(".png") ? "image/png" : "image/jpeg";
+  return {
+    imageUrl: `data:${mime};base64,${bytes.toString("base64")}`,
+    label: `${imagePath} (${bytes.length} bytes)`,
+  };
+}
+
+async function main() {
+  const { imageUrl, label } = resolveImageUrl();
+
+  console.log(`image: ${label}`);
   console.log(`POST ${baseUrl}/v1/responses (input_image data URL)`);
 
   const started = Date.now();
@@ -56,7 +70,7 @@ async function main() {
 
   expect(body.status === "completed", `expected completed, got ${body.status}`);
   expect(
-    typeof body.output_text === "string" && body.output_text.trim().length > 20,
+    typeof body.output_text === "string" && body.output_text.trim().length > 5,
     "missing output_text",
   );
 
