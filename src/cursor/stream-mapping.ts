@@ -21,6 +21,23 @@ export function createStreamMappingState(body: CreateResponseRequest): StreamSta
   };
 }
 
+export function suffixAfterPrefix(existing: string, incoming: string): string {
+  if (!incoming) return "";
+  if (!existing) return incoming;
+  if (incoming.startsWith(existing)) return incoming.slice(existing.length);
+  if (existing.startsWith(incoming)) return "";
+
+  const trimmedExisting = existing.trim();
+  const trimmedIncoming = incoming.trim();
+  if (!trimmedExisting) return incoming;
+  if (trimmedIncoming.startsWith(trimmedExisting)) {
+    return trimmedIncoming.slice(trimmedExisting.length);
+  }
+  if (trimmedExisting.startsWith(trimmedIncoming)) return "";
+
+  return "";
+}
+
 export function resolveFinalAssistantText(
   finalResult: string | undefined,
   buffered: string,
@@ -143,14 +160,7 @@ export function buildAssistantTextEvents(
   const { item, events: startEvents } = ensureMessageItem(state);
   const part = outputTextPart(item);
   const existingText = part?.text ?? "";
-  let textToEmit = text;
-  if (existingText) {
-    if (text.startsWith(existingText)) {
-      textToEmit = text.slice(existingText.length);
-    } else if (existingText.startsWith(text)) {
-      textToEmit = "";
-    }
-  }
+  const textToEmit = suffixAfterPrefix(existingText, text);
   if (part) part.text = text;
 
   const outputIndex = state.response.output.indexOf(item);
