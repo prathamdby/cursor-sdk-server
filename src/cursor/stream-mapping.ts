@@ -106,7 +106,7 @@ export function applyInteractionUpdate(
 ): ResponseStreamEvent[] {
   if (update.type === "text-delta" && update.text) {
     state.bufferedAssistantText += update.text;
-    return [];
+    return buildAssistantTextEvents(state, state.bufferedAssistantText);
   }
 
   if (update.type === "thinking-delta" && update.text) {
@@ -142,17 +142,26 @@ export function buildAssistantTextEvents(
 
   const { item, events: startEvents } = ensureMessageItem(state);
   const part = outputTextPart(item);
+  const existingText = part?.text ?? "";
+  let textToEmit = text;
+  if (existingText) {
+    if (text.startsWith(existingText)) {
+      textToEmit = text.slice(existingText.length);
+    } else if (existingText.startsWith(text)) {
+      textToEmit = "";
+    }
+  }
   if (part) part.text = text;
 
   const outputIndex = state.response.output.indexOf(item);
   const events: ResponseStreamEvent[] = [...startEvents];
 
-  for (let offset = 0; offset < text.length; offset += chunkSize) {
+  for (let offset = 0; offset < textToEmit.length; offset += chunkSize) {
     events.push({
       type: "response.output_text.delta",
       output_index: outputIndex,
       content_index: 0,
-      delta: text.slice(offset, offset + chunkSize),
+      delta: textToEmit.slice(offset, offset + chunkSize),
       item_id: item.id,
     });
   }
